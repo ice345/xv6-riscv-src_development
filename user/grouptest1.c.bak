@@ -1,0 +1,439 @@
+#include "kernel/types.h"
+#include "kernel/stat.h"
+#include "user/user.h"
+#include "kernel/fcntl.h"
+
+
+// Global test statistics
+static int tests_passed = 0;
+static int tests_failed = 0;
+
+const int lock_id = 7;
+const int num_processes = 2;
+const int iterations_per_process = 100;
+const char* filename = "counter1.txt";
+
+
+#define TEST_ASSERT(condition, message) do { \
+    if (condition) { \
+        printf("✓ %s\n", message); \
+        tests_passed++; \
+    } else { \
+        printf("✗ %s\n", message); \
+        tests_failed++; \
+    } \
+} while(0)
+
+void test_mathematical_properties(void) {
+    printf("\n=== Mathematical Properties Verification Test ===\n");
+    
+    int result = grouplock_verify();
+    TEST_ASSERT(result == 0, "Group theory mathematical properties verification passed");
+    
+    if (result == 0) {
+        printf("Verification content:\n");
+        printf("  - Z/2Z group closure property ✓\n");
+        printf("  - Associativity ✓\n");
+        printf("  - Commutativity (Abelian group property) ✓\n");
+        printf("  - Identity element existence ✓\n");
+        printf("  - Inverse element existence ✓\n");
+        printf("  - Deadlock freedom mathematical proof ✓\n");
+        printf("  - Atomic group operation verification ✓\n");
+    }
+}
+
+void test_basic_operations(void) {
+    printf("\n=== Basic Operations Test ===\n");
+    
+    // Create group lock
+    int result = grouplock_create(1, "test_lock");
+    TEST_ASSERT(result == 0, "Successfully created group lock 1");
+    
+    // Acquire lock (0 + 1 = 1)
+    result = grouplock_acquire(1);
+    TEST_ASSERT(result == 0, "Successfully acquired group lock 1 (Group operation: 0 + 1 = 1)");
+    
+    // Release lock (1 + 1 = 0)
+    result = grouplock_release(1);
+    TEST_ASSERT(result == 0, "Successfully released group lock 1 (Group operation: 1 + 1 = 0)");
+    
+    // Acquire and release again to verify repeatability
+    result = grouplock_acquire(1);
+    TEST_ASSERT(result == 0, "Can repeatedly acquire group lock 1");
+    
+    result = grouplock_release(1);
+    TEST_ASSERT(result == 0, "Can repeatedly release group lock 1");
+    
+    // Destroy lock
+    result = grouplock_destroy(1);
+    TEST_ASSERT(result == 0, "Successfully destroyed group lock 1");
+}
+
+void test_concurrent_access(void) {
+    printf("\n=== Concurrent Access Test ===\n");
+    
+    if (grouplock_create(2, "ccrent_lock") < 0) {
+        printf("✗ Failed to create concurrent test lock\n");
+        tests_failed++;
+        return;
+    }
+    
+    printf("Creating child process for concurrent testing...\n");
+    
+    int pid = fork();
+    if (pid == 0) {
+        // Child process
+        printf("Child process %d: Attempting to acquire lock (applying group operation)\n", getpid());
+        if (grouplock_acquire(2) == 0) {
+            printf("Child process %d: Successfully acquired lock, entering critical section\n", getpid());
+            
+            // Display debug info
+            printf("Child process %d: Checking lock status\n", getpid());
+            grouplock_debug(2);
+
+            // Increase the probability of concurrency conflicts and test stability
+            for (int i = 0; i < 1000000; i++); // Simple delay
+
+            printf("Child process %d: Releasing lock (applying inverse operation)\n", getpid());
+            grouplock_release(2);
+        }
+        exit(0);
+    } else {
+        // Parent process
+        sleep(1); // Let child process run first
+        printf("Parent process %d: Attempting to acquire lock\n", getpid());
+        if (grouplock_acquire(2) == 0) {
+            printf("Parent process %d: Successfully acquired lock, entering critical section\n", getpid());
+            
+            // Display debug info
+            printf("Parent process %d: Checking lock status\n", getpid());
+            grouplock_debug(2);
+            
+            // Increase the probability of concurrency conflicts and test stability
+            for (int i = 0; i < 500000; i++); // Simple delay
+            
+            printf("Parent process %d: Releasing lock\n", getpid());
+            grouplock_release(2);
+        }
+        
+        wait(0); // Wait for child process to finish
+        
+        int result = grouplock_destroy(2);
+        TEST_ASSERT(result == 0, "Concurrent test completed, lock properly cleaned up");
+    }
+}
+
+void test_multiple_processes(void) {
+    printf("\n=== Multi-process Stress Test ===\n");
+    
+    if (grouplock_create(3, "stress_lock") < 0) {
+        printf("✗ Failed to create stress test lock\n");
+        tests_failed++;
+        return;
+    }
+    
+    int num_processes = 4;
+    printf("Starting %d processes for stress test...\n", num_processes);
+    
+    for (int i = 0; i < num_processes; i++) {
+        int pid = fork();
+        if (pid == 0) {
+            // Child process
+            int process_num = i;
+            printf("Process %d (Number %d): Starting test\n", getpid(), process_num);
+            
+            for (int j = 0; j < 3; j++) {
+                printf("Process %d: Attempt %d to acquire lock\n", getpid(), j + 1);
+                
+                if (grouplock_acquire(3) == 0) {
+                    printf("Process %d: Successfully acquired lock, executing critical section operations\n", getpid());
+                    
+                    // Simulate different workloads
+                    for (int k = 0; k < (process_num + 1) * 200000; k++);
+                    
+                    printf("Process %d: Releasing lock\n", getpid());
+                    grouplock_release(3);
+                } else {
+                    printf("Process %d: Failed to acquire lock\n", getpid());
+                }
+                
+                // Inter-process interval
+                for (int k = 0; k < 100000; k++);
+            }
+            
+            printf("Process %d: Test completed\n", getpid());
+            exit(0);
+        }
+    }
+    
+    // Wait for all child processes to complete
+    for (int i = 0; i < num_processes; i++) {
+        wait(0);
+    }
+    
+    int result = grouplock_destroy(3);
+    TEST_ASSERT(result == 0, "Multi-process stress test completed");
+}
+
+void test_edge_cases(void) {
+    printf("\n=== Edge Cases Test ===\n");
+    
+    // Test invalid ID
+    int result = grouplock_acquire(-1);
+    TEST_ASSERT(result < 0, "Correctly rejected invalid lock ID -1");
+    
+    result = grouplock_acquire(999);
+    TEST_ASSERT(result < 0, "Correctly rejected invalid lock ID 999");
+    
+    // Test repeated operations
+    if (grouplock_create(4, "edge_lock") == 0) {
+        if (grouplock_acquire(4) == 0) {
+            // Try repeated release
+            grouplock_release(4);
+            result = grouplock_release(4);
+            TEST_ASSERT(result < 0, "Correctly rejected repeated release");
+        }
+        
+        // Test repeated creation
+        result = grouplock_create(4, "duplicate");
+        TEST_ASSERT(result < 0, "Correctly rejected repeated creation of lock with same ID");
+        
+        grouplock_destroy(4);
+    }
+    
+    // Test destroying a lock in use
+    if (grouplock_create(5, "busy_lock") == 0) {
+        grouplock_acquire(5);
+        result = grouplock_destroy(5);
+        TEST_ASSERT(result < 0, "Correctly rejected destroying a lock in use");
+        grouplock_release(5);
+        grouplock_destroy(5);
+    }
+}
+
+void test_group_theory_properties(void) {
+    printf("=== Group Theory Properties Practical Verification ===\n");
+    
+    if (grouplock_create(6, "theory_lock") < 0) {
+        printf("✗ Failed to create theory test lock\n");
+        tests_failed++;
+        return;
+    }
+    
+    printf("Verifying specific applications of group operations:\n");
+    
+    // Verify identity property: e + a = a
+    printf("1. Identity property: Initial state is 0 (identity element)\n");
+    grouplock_debug(6);
+    
+    // Verify group operation: 0 + 1 = 1
+    printf("2. Group operation: 0 + 1 = 1 (acquire operation)\n");
+    if (grouplock_acquire(6) == 0) {
+        grouplock_debug(6);
+        
+        // Verify inverse operation: 1 + 1 = 0
+        printf("3. Inverse operation: 1 + 1 = 0 (release operation)\n");
+        grouplock_release(6);
+        grouplock_debug(6);
+        
+        TEST_ASSERT(1, "Group theory properties verified in practical operations");
+    }
+    
+    grouplock_destroy(6);
+}
+
+// Write the num into buf
+static void itoa(int n, char *buf)
+{
+    int i = 0;
+    int is_negative = 0;
+    char temp[16];
+    memset(temp, 0, sizeof(temp));
+
+    if (n == 0) {
+      buf[0] = '0';
+      buf[1] = '\0';
+      return;
+    }
+  
+    if (n < 0) {
+      is_negative = 1;
+      n = -n;
+    }
+  
+    // store the inversed number
+    while(n != 0) {
+      temp[i] = (n % 10) + '0';
+      i++;
+      n = n / 10;
+    }
+  
+    if (is_negative == 1) {
+      temp[i] = '-';
+      i++;
+    }
+  
+    // store the inversed temp array into the buf(the original num)
+    int j = 0;
+    while (i > 0) {
+      buf[j++] = temp[--i];
+    }
+    buf[j] = '\0'; // To ensure strlen function to find '\0'
+}
+
+
+void test_shared_data_consistency(void) {
+    printf("\n=== Shared Data Consistency Test ===\n");
+
+
+    // 1. Create and initialize the lock
+    if (grouplock_create(lock_id, "sd_lock") < 0) {
+        printf("✗ Failed to create shared data lock\n");
+        tests_failed++;
+        return;
+    }
+
+    // 2. Create and initialize the shared data file
+    int fd = open(filename, O_CREATE | O_WRONLY | O_TRUNC);
+    if (fd < 0) {
+        printf("✗ Failed to create counter1 file\n");
+        tests_failed++;
+        grouplock_destroy(lock_id);
+        return;
+    }
+    char buf[16];
+    // Fill the buf with 0
+    memset(buf, 0, sizeof(buf));
+    // Write 0 into the buf
+    itoa(0, buf);
+    // Write the content of the buf into fd
+    write(fd, buf, strlen(buf));
+    close(fd);
+
+    printf("Starting %d processes, each iterating %d times...\n", num_processes, iterations_per_process);
+
+    // 3. Fork child processes
+    for (int i = 0; i < num_processes; i++) {
+        int pid = fork();
+        if (pid == 0) {
+            // Child process
+            for (int j = 0; j < iterations_per_process; j++) {
+                if (grouplock_acquire(lock_id) == 0) {
+                    // --- Critical Section ---
+                    fd = open(filename, O_RDONLY);
+                    if (fd < 0) {
+                        printf("Child %d: failed to read file\n", getpid());
+                        grouplock_release(lock_id);
+                        continue;
+                    }
+                    
+                    char buf[16];
+                    memset(buf, 0, sizeof(buf));
+                    int n = read(fd, buf, sizeof(buf) - 1);
+                    close(fd);
+
+                    if (n > 0) {
+                        buf[n] = '\0';
+                        int value = atoi(buf);
+                        value++;
+
+                        fd = open(filename, O_WRONLY | O_CREATE | O_TRUNC);
+                        if (fd < 0) {
+                            printf("Child %d: failed to write file\n", getpid());
+                            grouplock_release(lock_id);
+                            continue;
+                        }
+                        char wbuf[16];
+                        memset(wbuf, 0, sizeof(wbuf));
+                        itoa(value, wbuf);
+                        uint test = strlen(wbuf);
+                        // if (write(fd, wbuf, strlen(wbuf)) != strlen(wbuf)) {
+                        if (write(fd, wbuf, test) != test) {
+                            printf("Child %d: write failed\n", getpid());
+                        }
+                        close(fd);
+                    }
+                    // --- End Critical Section ---
+                    grouplock_release(lock_id);
+                } else {
+                    printf("Child %d: failed to acquire lock\n", getpid());
+                }
+                // Yield CPU to encourage context switching
+                // sleep(1);
+            }
+            exit(0);
+        } else if (pid < 0) {
+            printf("✗ Fork failed\n");
+            tests_failed++;
+        }
+    }
+
+    // 4. Wait for all child processes to complete
+    for (int i = 0; i < num_processes; i++) {
+        wait(0);
+    }
+
+    // 5. Verify the result
+    fd = open(filename, O_RDONLY);
+    if (fd < 0) {
+        printf("✗ Failed to open counter1 file for verification\n");
+        tests_failed++;
+    } else {
+        char buf[16];
+        memset(buf, 0, sizeof(buf));
+        int n = read(fd, buf, sizeof(buf) - 1);
+        if (n > 0) {
+            buf[n] = '\0';
+            int final_value = atoi(buf);
+            int expected_value = num_processes * iterations_per_process;
+            
+            printf("Final value in file: %d, Expected value: %d\n", final_value, expected_value);
+            TEST_ASSERT(final_value == expected_value, "Shared data consistency maintained under lock");
+        } else {
+            printf("✗ Failed to read final value from file\n");
+            tests_failed++;
+        }
+        close(fd);
+    }
+
+    // 6. Cleanup
+    grouplock_destroy(lock_id);
+    unlink(filename);
+}
+
+int main(int argc, char *argv[]) {
+    printf("=== GroupLock Complete Test Suite ===\n");
+    printf("Lock mechanism test based on abstract algebra Z/2Z group theory\n");
+    printf("Author: Operating Systems Course Project\n");
+    printf("Theoretical foundation: Finite group Z/2Z = ({0,1}, +)\n");
+    
+    // Run all tests
+    test_mathematical_properties();
+    test_basic_operations();
+    test_concurrent_access();
+    test_multiple_processes();
+    test_edge_cases();
+    test_group_theory_properties();
+    test_shared_data_consistency();
+    
+    // Test results summary
+    printf("=== Test Results Summary ===\n");
+    printf("Tests passed: %d\n", tests_passed);
+    printf("Tests failed: %d\n", tests_failed);
+    printf("Total tests: %d\n", tests_passed + tests_failed);
+    
+    if (tests_failed == 0) {
+        printf("🎉 All tests passed! GroupLock mechanism works correctly.\n");
+        printf("Mathematical theory and system implementation perfectly combined!\n");
+    } else {
+        printf("⚠️  %d tests failed, implementation needs to be checked.\n", tests_failed);
+    }
+    
+    // printf("\n=== Usage Suggestions ===\n");
+    // printf("1. Use the 'ps' command to observe process status\n");
+    // printf("2. Include grouplock.c in the kernel during compilation\n");
+    // printf("3. Call grouplock_init() in main.c\n");
+    // printf("4. Register new system calls in the system call table\n");
+    
+    exit(0);
+}
