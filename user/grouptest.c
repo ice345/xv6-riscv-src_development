@@ -42,6 +42,38 @@ void test_mathematical_properties(void) {
     }
 }
 
+// Test the group theory properties in practical operations
+void test_group_theory_properties(void) {
+    printf("=== Group Theory Properties Practical Verification ===\n");
+    
+    if (grouplock_create(6, "theory_lock") < 0) {
+        printf("✗ Failed to create theory test lock\n");
+        tests_failed++;
+        return;
+    }
+    
+    printf("Verifying specific applications of group operations:\n");
+    
+    // Verify identity property: e + a = a
+    printf("1. Identity property: Initial state is 0 (identity element)\n");
+    grouplock_debug(6);
+    
+    // Verify group operation: 0 + 1 = 1
+    printf("2. Group operation: 0 + 1 = 1 (acquire operation)\n");
+    if (grouplock_acquire(6) == 0) {
+        grouplock_debug(6);
+        
+        // Verify inverse operation: 1 + 1 = 0
+        printf("3. Inverse operation: 1 + 1 = 0 (release operation)\n");
+        grouplock_release(6);
+        grouplock_debug(6);
+        
+        TEST_ASSERT(1, "Group theory properties verified in practical operations");
+    }
+    
+    grouplock_destroy(6);
+}
+
 // Test the basic operations of the group lock, like create, acquire, release, destroy
 void test_basic_operations(void) {
     printf("\n=== Basic Operations Test ===\n");
@@ -252,7 +284,7 @@ void write_counter(const char* filename, int counter) {
     close(fd);
 }
 
-// Helper function to test lock contention
+// Test lock contention with multiple processes incrementing a shared counter in a file
 void test_lock_contention(void) {
     printf("\n=== GroupLock Contention Test (on Shared File) ===\n");
 
@@ -350,37 +382,6 @@ void test_edge_cases(void) {
     }
 }
 
-// Test the group theory properties in practical operations
-void test_group_theory_properties(void) {
-    printf("=== Group Theory Properties Practical Verification ===\n");
-    
-    if (grouplock_create(6, "theory_lock") < 0) {
-        printf("✗ Failed to create theory test lock\n");
-        tests_failed++;
-        return;
-    }
-    
-    printf("Verifying specific applications of group operations:\n");
-    
-    // Verify identity property: e + a = a
-    printf("1. Identity property: Initial state is 0 (identity element)\n");
-    grouplock_debug(6);
-    
-    // Verify group operation: 0 + 1 = 1
-    printf("2. Group operation: 0 + 1 = 1 (acquire operation)\n");
-    if (grouplock_acquire(6) == 0) {
-        grouplock_debug(6);
-        
-        // Verify inverse operation: 1 + 1 = 0
-        printf("3. Inverse operation: 1 + 1 = 0 (release operation)\n");
-        grouplock_release(6);
-        grouplock_debug(6);
-        
-        TEST_ASSERT(1, "Group theory properties verified in practical operations");
-    }
-    
-    grouplock_destroy(6);
-}
 
 
 int main(int argc, char *argv[]) {
@@ -391,11 +392,11 @@ int main(int argc, char *argv[]) {
     
     // Run all tests
     test_mathematical_properties();
+    test_group_theory_properties();
     test_basic_operations();
     test_concurrent_access();
     test_multiple_processes();
     test_edge_cases();
-    test_group_theory_properties();
     test_lock_contention();
     
     // Test results summary
